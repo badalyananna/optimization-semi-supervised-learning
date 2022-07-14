@@ -31,12 +31,23 @@ def obj_func(y, y_l, W_l, W_u):
     part2 = np.multiply(W_u, part2)
     return np.sum(part1) + (0.5 * np.sum(part2))
 
+def power_method(A, n):
+    """Calculates the largest eigenvalue and corresponding eigenvector using the power method.
+    A - input matrix
+    n - the number of iterations of the power method
+    """
+    x = np.ones(len(A[0]))
+    for _ in range(n):
+        y = np.matmul(A, x)
+        eigenvalue = np.linalg.norm(y)
+        eigenvector = y / np.linalg.norm(y)
+    return eigenvector, eigenvalue
+
 def calc_Lipshitz(W_l, W_u):
     hes = W_u * (-2)
     diag_values = (W_l.sum(axis=0) + W_u.sum(axis=0))
     np.fill_diagonal(hes, diag_values)
-    eigenvalues = np.linalg.eigvalsh(hes)
-    L = np.max(eigenvalues)
+    vec, L = power_method(hes, 500)
     return L
 
 def plot_data(X,Y):
