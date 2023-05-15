@@ -50,15 +50,15 @@ def prepare_data(path):
     lr = config.get('learningrate')
     max_iter = config.get('maxiterations')
     eps = config.get('epsilon')
-    randomseed = config.get('randomseed')
+    random_seed = config.get('randomseed')
 
 
-    X, y = make_blobs(n_samples=noofsamples, centers=noofcenters, n_features=nooffeatures, random_state=123)
+    X, y = make_blobs(n_samples=noofsamples, centers=noofcenters, n_features=nooffeatures, random_state=random_seed)
 
     y[y == 0] = -1
 
     # first we shuffle and build the similarity matrix in order to separate later without shuffling and keep the form of the W matrix
-    X, y = shuffle(X, y, random_state=1)
+    X, y = shuffle(X, y, random_state=random_seed)
     # W = 1 / (pairwise_distances(X) + 0.0001)
     W  = np.exp(-(euclidean_distances(X, squared=True)) * 0.5)
     X_l, X_u, y_l, y_u , W_l, W_u = train_test_split(X, y, W, test_size = testsize, shuffle=False)
@@ -68,5 +68,5 @@ def prepare_data(path):
     W_l = W_l[:,n:]
     W_u = W_u[:,n:]
 
-    return X,y,X_l,X_u,y_l,y_u,W_l,W_u,lr,max_iter,eps,randomseed
+    return X,y,X_l,X_u,y_l,y_u,W_l,W_u,lr,max_iter,eps,random_seed
 

@@ -1,42 +1,64 @@
 import time
 import numpy as np
-from common import calc_gradient, obj_func
+from common import calc_grad_y_j, calc_obj_func
 
-def cycl_BCGD(y_l, W_l, W_u, lr, num_blocks, max_iter, eps):
-    loss_stat = [] # loss statistics
-    time_stat = [] # time statistics
-    y_pred = np.zeros(len(W_u))
-    print(f"Initial loss: {obj_func(y_pred, y_l, W_l, W_u)}")
-
-    # calculate the partition size for unlabeled data
-    p_size_u = int(len(y_pred) / num_blocks)
+def cycl_BCGD(y_l, W_l, W_u, L_i, max_cycle, eps, calc_of=False, alpha_min=0):
+    """Implements the randomized BCGD method to minimize the objective function.
+    y_l - labeled variables
+    W_l - similarity matrix for labelled and unlabelled
+    W_u - similarity matrix for unlabelled
+    L_i - Lipschitz constant for each coordinate
+    alpha_min - sets the minimum value for the stepsize
+    max_cycle - maximum number of cycles
+    eps - tolerance
+    calc_of - boolean variable, if True the objective functions is calucated after each cycle
+    """
+    start_time = time.time()
+      
+    time_stat = [0] 
+    grad_stat = []
+    obj_fun_stat = []
     
-    for iter in range(max_iter):
-        y_old = y_pred.copy()
-        grad_time = 0
-        for i in range(num_blocks):
-            # slice the blocks
-            y_k = y_pred[(i*p_size_u):((i+1)*p_size_u)]
-            W_l_k = W_l[:, (i*p_size_u):((i+1)*p_size_u)]
-            W_u_k = W_u[(i*p_size_u):((i+1)*p_size_u), (i*p_size_u):((i+1)*p_size_u)]
+    n = len(W_u)
+    y_pred = np.zeros(n)
+    alpha = 1 / L_i
+        
+    obj_fun = calc_obj_func(y_pred, y_l, W_l, W_u)
+    print(f"Initial loss: {obj_fun}")
 
+    for it in range(max_cycle):
+        stop_cond = 0
+        for jk in range(n):
             # calculate the gradient
-            start = time.time()
-            grad = calc_gradient(y_k, y_l, W_l_k, W_u_k)
-            end = time.time()
-            grad_time += end - start
+            grad = calc_grad_y_j(jk, y_pred, y_l, W_l, W_u)
+            direction = - grad
 
             # update predictions
-            y_k -= lr * grad
-            y_pred[(i*p_size_u):((i+1)*p_size_u)] = y_k
+            alpha_k = max(alpha[jk], alpha_min)
+            u = alpha_k * direction
+            y_j += u
+            y_pred[jk] = y_j
         
-        time_stat.append(grad_time)
-        loss = obj_func(y_pred, y_l, W_l, W_u)
-        loss_stat.append(loss)
-
-        stop_cond = np.linalg.norm(y_old - y_pred)
-        print(f"Interation {iter}, loss:  {obj_func(y_pred, y_l, W_l, W_u)}, norm: {stop_cond}")
+            stop_cond += abs(grad*direction)
+            
+        stop_cond /= n # take the average of gradient and direction products
+        grad_stat.append(stop_cond)
+        iter_time = time.time()
+        time_stat.append(iter_time-start_time)
         if stop_cond < eps:
-          break
-
-    return y_pred, loss_stat, time_stat 
+            obj_fun = calc_obj_func(y_pred, y_l, W_l, W_u)
+            obj_fun_stat.append(obj_fun)
+            print(f"""
+            Stopping condition satisfied, obj fun: {obj_fun}, 
+            Gradient norm: {stop_cond}",
+            Total CPU time: {iter_time-start_time}""")
+            break
+        
+        if calc_of:
+            obj_fun_val = calc_obj_func(y_pred, y_l, W_l, W_u)
+            obj_fun_stat.append(obj_fun_val)
+            print(f"Cycle {it+1}: obj fun {obj_fun_val}, gradient norm {stop_cond}")
+        else:
+            print(f"Cycle {it+1}: gradient norm {stop_cond}")
+     
+    return y_pred, grad_stat, time_stat, obj_fun_stat

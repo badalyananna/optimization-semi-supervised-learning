@@ -1,45 +1,76 @@
 import time
 import numpy as np
-from common import calc_gradient, obj_func
+from common import calc_grad_y_j, calc_obj_func
 
-def rand_BCGD(y_l, W_l, W_u, lr, num_blocks, max_iter, eps, random_seed=None):
+def rand_BCGD(y_l, W_l, W_u, L_i, max_cycle, eps, nesterov_sampling=False, calc_of=False, alpha_min=0, random_seed=None):
+    """Implements the randomized BCGD method to minimize the objective function.
+    y_l - labeled variables
+    W_l - similarity matrix for labelled and unlabelled
+    W_u - similarity matrix for unlabelled
+    L_i - Lipschitz constant for each coordinate
+    alpha_min - sets the minimum value for the stepsize
+    max_cycle - maximum number of cycles
+    eps - tolerance
+    nesterov_samling - if true, samples the coordinates according to the Nesterov's rule,
+        choosing the coordinates with the largest L_i more often
+    calc_of - boolean variable, if True the objective functions is calucated after each cycle
+    """
+    start_time = time.time()
     np.random.seed(random_seed)
-    loss_stat = [] # loss statistics
-    time_stat = [] # time statistics
-    y_pred = np.zeros(len(W_u))
-    print(f"Initial loss: {obj_func(y_pred, y_l, W_l, W_u)}")
-
-    # calculate the partition size for unlabeled data
-    p_size_u = int(len(y_pred) / num_blocks)
     
-    for iter in range(max_iter):
-        # recoding the copy of old values in order to use the change as a stopping condition
-        y_old = y_pred.copy()
-        grad_time = 0
-        for i in range(num_blocks):
-            # choose random block
-            ik = np.random.randint(0, num_blocks)
-            # slice the blocks
-            y_k = y_pred[(ik*p_size_u):((ik+1)*p_size_u)]
-            W_l_k = W_l[:, (ik*p_size_u):((ik+1)*p_size_u)]
-            W_u_k = W_u[(ik*p_size_u):((ik+1)*p_size_u), (ik*p_size_u):((ik+1)*p_size_u)]
+    time_stat = [0] 
+    grad_stat = []
+    obj_fun_stat = []
+    
+    n = len(W_u)
+    y_pred = np.zeros(n)
+    alpha = 1 / L_i
+    if nesterov_sampling:
+        p = L_i / L_i.sum()
+        
+    obj_fun = calc_obj_func(y_pred, y_l, W_l, W_u)
+    print(f"Initial loss: {obj_fun}")
+
+    for it in range(max_cycle):
+        stop_cond = 0
+        for _ in range(n):
+            # choose random coordinate
+            if nesterov_sampling:
+                jk = np.random.choice(n, p=p)
+            else:
+                jk = np.random.randint(n)
+            y_j = y_pred[jk]
 
             # calculate the gradient
-            start = time.time()
-            grad = calc_gradient(y_k, y_l, W_l_k, W_u_k)
-            end = time.time()
-            grad_time += end - start
+            grad = calc_grad_y_j(jk, y_pred, y_l, W_l, W_u)
+            direction = - grad
 
             # update predictions
-            y_k -= lr * grad
-            y_pred[(ik*p_size_u):((ik+1)*p_size_u)] = y_k
-
-        time_stat.append(grad_time)
-        stop_cond = np.linalg.norm(y_old - y_pred)
-        loss = obj_func(y_pred, y_l, W_l, W_u)
-        loss_stat.append(loss)
-        print(f"Interation {iter}, loss:  {loss}, norm: {stop_cond}")
+            alpha_k = max(alpha[jk], alpha_min)
+            u = alpha_k * direction
+            y_j += u
+            y_pred[jk] = y_j
+        
+            stop_cond += abs(grad*direction)
+            
+        stop_cond /= n # take the average of gradient and direction products
+        grad_stat.append(stop_cond)
+        iter_time = time.time()
+        time_stat.append(iter_time-start_time)
         if stop_cond < eps:
-          break
-
-    return y_pred, loss_stat, time_stat
+            obj_fun = calc_obj_func(y_pred, y_l, W_l, W_u)
+            obj_fun_stat.append(obj_fun)
+            print(f"""
+            Stopping condition satisfied, obj fun: {obj_fun}, 
+            Gradient norm: {stop_cond}",
+            Total CPU time: {iter_time-start_time}""")
+            break
+        
+        if calc_of:
+            obj_fun_val = calc_obj_func(y_pred, y_l, W_l, W_u)
+            obj_fun_stat.append(obj_fun_val)
+            print(f"Cycle {it+1}: obj fun {obj_fun_val}, gradient norm {stop_cond}")
+        else:
+            print(f"Cycle {it+1}: gradient norm {stop_cond}")
+     
+    return y_pred, grad_stat, time_stat, obj_fun_stat
